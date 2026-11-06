@@ -9,6 +9,7 @@ const SLIDE_SECONDS := 0.45
 
 var kind := Kind.DOOR
 var is_open := false
+var jammed := false  ## Rusted shut: stays a window to look at, never a way out.
 
 var _panel: AnimatableBody3D
 var _closed_position := Vector3.ZERO
@@ -16,7 +17,7 @@ var _open_position := Vector3.ZERO
 var _progress := 0.0
 
 
-func setup(opening_kind: Kind, size: Vector3, open_offset: Vector3, material: Material) -> void:
+func setup(opening_kind: Kind, size: Vector3, open_offset: Vector3, model: String) -> void:
 	kind = opening_kind
 	_open_position = open_offset
 
@@ -34,12 +35,8 @@ func setup(opening_kind: Kind, size: Vector3, open_offset: Vector3, material: Ma
 	shape.shape = box
 	_panel.add_child(shape)
 
-	var mesh := MeshInstance3D.new()
-	var box_mesh := BoxMesh.new()
-	box_mesh.size = size
-	box_mesh.material = material
-	mesh.mesh = box_mesh
-	_panel.add_child(mesh)
+	for part: String in Models.all(model):
+		Models.place(_panel, model, part, Vector3.ZERO)
 
 	var volume := Area3D.new()
 	volume.name = "UseVolume"
@@ -61,8 +58,15 @@ func setup(opening_kind: Kind, size: Vector3, open_offset: Vector3, material: Ma
 	set_physics_process(false)
 
 
+## Called once after setup. Leaves the panel in place and takes the hole out of play.
+func jam() -> void:
+	jammed = true
+	get_node("UseVolume").queue_free()
+
+
 func interact(_by: Node3D) -> void:
-	set_open(not is_open)
+	if not jammed:
+		set_open(not is_open)
 
 
 func set_open(value: bool) -> void:
@@ -74,6 +78,8 @@ func set_open(value: bool) -> void:
 
 
 func get_prompt() -> String:
+	if jammed:
+		return "Rusted shut"
 	var noun := "door" if kind == Kind.DOOR else "window"
 	return ("Close " if is_open else "Open ") + noun
 

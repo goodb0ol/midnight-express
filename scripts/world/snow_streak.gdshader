@@ -5,6 +5,7 @@ render_mode skip_vertex_transform, unshaded, cull_disabled, blend_add, depth_dra
 // a 240 m band around the train, so no per-instance CPU work is needed.
 uniform float scroll = 0.0;
 uniform float stretch = 1.0;
+uniform float opacity = 0.22;
 
 void vertex() {
 	vec3 origin = MODEL_MATRIX[3].xyz;
@@ -17,5 +18,5 @@ void vertex() {
 
 void fragment() {
 	ALBEDO = vec3(0.75, 0.82, 0.95);
-	ALPHA = 0.22;
+	ALPHA = opacity;
 }

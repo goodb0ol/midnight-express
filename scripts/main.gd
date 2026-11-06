@@ -38,12 +38,16 @@ const DUMMIES: Array[Array] = [
 	[&"Locomotive", Vector3(-0.6, 0.05, 0.6)],
 ]
 
+## Tests turn this off to keep the sandbox deterministic.
+var auto_start_round := true
 var train: Train
 var treadmill: Treadmill
 var hud: Hud
 var touch: TouchControls
 var local_player: Player
 var players: Dictionary = {}  # peer id -> Player
+## Null in the sandbox (auto_start_round false) until start_rounds() is called.
+var round_director: RoundDirector
 
 var _props_root: Node3D
 var _npcs_root: Node3D
@@ -81,8 +85,24 @@ func _ready() -> void:
 	hud.clipboard.reset_cargo_requested.connect(reset_cargo)
 	hud.clipboard.respawn_requested.connect(_respawn_local_player)
 
-	spawn_cargo()
-	spawn_local_player(multiplayer.get_unique_id())
+	if auto_start_round:
+		spawn_props()
+		spawn_local_player(multiplayer.get_unique_id())
+		start_rounds()
+	else:
+		spawn_cargo()
+		spawn_local_player(multiplayer.get_unique_id())
+
+
+## Hands the train over to the raid loop. The director stocks the people itself.
+func start_rounds() -> RoundDirector:
+	round_director = RoundDirector.new()
+	round_director.name = "RoundDirector"
+	round_director.setup(self)
+	add_child(round_director)
+	hud.bind_round(round_director)
+	round_director.begin()
+	return round_director
 
 
 ## Solo play. Milestone 4 calls spawn_player for each peer, with a network input source.
@@ -124,18 +144,24 @@ func spawn_prop(kind: StringName, at: Transform3D) -> PhysicsProp:
 	return prop
 
 
-func spawn_dummy(at: Transform3D, palette_index: int) -> TestDummy:
+## The role is set before entering the tree, so a dummy's _ready can already read it.
+func spawn_dummy(at: Transform3D, palette_index: int, stowaway := false) -> TestDummy:
 	var dummy := TestDummy.create(palette_index)
 	dummy.transform = at
+	dummy.is_stowaway = stowaway
 	_npcs_root.add_child(dummy)
 	return dummy
 
 
-func spawn_cargo() -> void:
+func spawn_props() -> void:
 	for entry in CARGO:
 		var car := train.car_by_id(entry[1])
 		var local: Vector3 = entry[2]
 		spawn_prop(entry[0], Transform3D(Basis.IDENTITY, car.position + local))
+
+
+func spawn_cargo() -> void:
+	spawn_props()
 	for i in DUMMIES.size():
 		var car := train.car_by_id(DUMMIES[i][0])
 		var local: Vector3 = DUMMIES[i][1]
@@ -144,13 +170,51 @@ func spawn_cargo() -> void:
 
 
 ## Clears every loose body and restocks the train. Clipboard test-bench button.
+## With a raid running it restarts that raid instead, so the roles stay assigned.
 func reset_cargo() -> void:
+	if round_director != null:
+		round_director.restart_round()
+		return
+	_clear_loose_bodies()
+	spawn_cargo()
+
+
+## Start of a raid: everyone back at the spawn, props restocked, the car emptied.
+func restock_props() -> void:
+	_clear_loose_bodies()
+	spawn_props()
+	for player: Player in players.values():
+		player.respawn()
+		player.input_source.yaw = PLAYER_SPAWN_YAW
+		player.input_source.pitch = 0.0
+
+
+## Everyone in the npc root, standing or out cold.
+func npc_bodies() -> Array[Node]:
+	return _npcs_root.get_children()
+
+
+## Everything loose aboard, for the raid's emergency brake.
+func prop_bodies() -> Array[Node]:
+	return _props_root.get_children()
+
+
+## Rattles the local view only. Rules never read this.
+func jolt_local_camera(shake: float, kick: Vector3) -> void:
+	if local_player == null:
+		return
+	var camera := local_player.get_node_or_null("Camera") as PlayerCamera
+	if camera != null:
+		camera.add_shake(shake)
+		camera.kick(kick)
+
+
+func _clear_loose_bodies() -> void:
 	for player: Player in players.values():
 		player.hands.force_release()
 	for root: Node3D in [_props_root, _npcs_root]:
 		for child in root.get_children():
 			child.queue_free()
-	spawn_cargo()
 
 
 func _respawn_local_player() -> void:

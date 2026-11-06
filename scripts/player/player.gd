@@ -34,6 +34,10 @@ var state := State.ABOARD
 var yaw := 0.0
 var pitch := 0.0
 var spawn_point := Vector3.ZERO
+var sprinting := false  ## Moving at a run this tick; rendering leans into it.
+## Where the legs are trying to go. Unlike velocity, move_and_slide does not zero this on
+## contact, so a body in the way can tell it is being leaned on.
+var wish_velocity := Vector3.ZERO
 
 var _coyote := 0.0
 var _jump_was_held := false
@@ -113,8 +117,10 @@ func _tick_aboard(command: PlayerCommand, delta: float) -> void:
 	_coyote = COYOTE_TIME if on_floor else _coyote - delta
 	var top_speed := SPRINT_SPEED if command.sprint else WALK_SPEED
 	top_speed *= hands.move_speed_factor()
+	sprinting = command.sprint and command.move.length() > 0.1
 	var target := _wish_direction(command) * top_speed
-	var accel := GROUND_ACCEL if on_floor else AIR_ACCEL
+	wish_velocity = target
+	var accel := (GROUND_ACCEL if on_floor else AIR_ACCEL) * hands.move_accel_factor()
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z).move_toward(target, accel * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
@@ -140,6 +146,11 @@ func _push_rigid_bodies() -> void:
 		body.apply_impulse(impulse, collision.get_position() - body.global_position)
 
 
+## Steps into a bonk. The ground acceleration eats it within a few ticks.
+func lunge(push: Vector3) -> void:
+	velocity += push
+
+
 ## --- Exterior Yeet Zone contract -------------------------------------------------
 
 func yeet_anchor() -> Vector3:
@@ -154,8 +165,11 @@ func on_left_train() -> void:
 	if state != State.ABOARD:
 		return
 	state = State.DRAGGED
+	sprinting = false
+	wish_velocity = Vector3.ZERO
 	collision_mask = Layers.GROUND
 	hands.force_release()
+	hands.cancel_swing()
 	shake_requested.emit(0.5)
 	GameEvents.player_left_train.emit(self)
 
@@ -195,6 +209,9 @@ func _board() -> void:
 ## Puts the player back on the train at their spawn point.
 func respawn() -> void:
 	hands.force_release()
+	hands.cancel_swing()
 	_board()
+	wish_velocity = Vector3.ZERO
 	global_position = spawn_point
 	reset_physics_interpolation()
+	GameEvents.player_respawned.emit(self)

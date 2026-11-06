@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 
 TrainState="*res://scripts/core/train_state.gd"
 GameEvents="*res://scripts/core/game_events.gd"
+Sfx="*res://scripts/core/sfx.gd"
 
 [display]
 

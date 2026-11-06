@@ -1,7 +1,7 @@
 # The Midnight Express: Boiler & Bistro
 
 First-person co-op physics management on a ramshackle steam train. Godot 4.7.2, GDScript,
-Jolt physics, Mobile renderer. All 3D art is code-built graybox for now.
+Jolt physics, Mobile renderer. Models are built in Blender from `blender/build_*.py` (see `docs/ART_BRIEF.md`).
 
 **Status: Milestone 1 (The Physics Boxcar & Yeet Prototype).** Milestones 2-4 are not started.
 
@@ -34,7 +34,8 @@ cargo and dummies, and "Back on the train".
 
 1. Grab the wrench from the table on your left (or the pan on your right).
 2. Bonk the dummy ahead: one hit with a tool, three with fists. A thrown wrench works too.
-3. Press grab on the body, carry it to a window, press grab on the window to open it.
+3. Press grab on the body, carry it to a door or window, press grab on it to open it. Only
+   the doors and the windows at -4.0 and 4.5 open; the rest are rusted shut.
 4. Hold throw, release. The speed counter's "yeeted" goes up.
 5. Open a side door and walk out to try the rescue rope. Steer to the orange rope, press
    grab. Miss it and you land back on the train.
@@ -46,7 +47,8 @@ cargo and dummies, and "Back on the train".
 - `scripts/player/hands.gd`: hold, throw and bonk strength.
 - `scripts/player/player.gd`: movement and the rescue rope drag.
 - `scripts/props/prop_catalog.gd`: add a prop by adding one entry.
-- `scripts/train/train.gd`: car specs and door and window positions.
+- `scripts/train/train.gd`: car specs, door and window positions, which windows work.
+- `scripts/game/round_director.gd`: clock, stowaway count, score, ranks.
 
 `SNATCH_FRACTION` is 0.55, not the spec's literal full speed, on purpose. A body given
 exactly the ground's speed is at rest relative to the ground and lands with no tumble and
@@ -89,6 +91,8 @@ godot --headless --path . --fixed-fps 60 res://tests/test_runner.tscn
 
 The exit code is non-zero if anything fails. Add `-- word` to run only tests whose name
 contains `word`. The runner is a scene rather than `--script` because autoload names do not
-resolve under `--script`.
+resolve under `--script`. A run is repeatable: dice come from `TrainState.next_seed()`, and the
+runner fixes the salt. Set the environment variable `TEST_RNG_SALT` to any number to replay every
+test under other dice when hunting a flake. Any engine or script error in the log fails its test.
 
 `tools/capture.tscn` plays the loop in a real window and saves screenshots to `captures/`.

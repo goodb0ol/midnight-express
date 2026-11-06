@@ -13,14 +13,30 @@ var speed_mps := DEFAULT_SPEED_KMH / KMH_PER_MPS
 var target_speed_mps := DEFAULT_SPEED_KMH / KMH_PER_MPS
 var distance_m := 0.0
 var route_seed := 20261105
+var in_tunnel := false
+var blizzard := 0.0  ## 0..1, written by the world stream.
+## Seeds for per-body dice. Random each launch; the test runner fixes it and resets the count.
+var rng_salt := 0
+var rng_serial := 0
 
 var _previous_distance := 0.0
+
+
+func _ready() -> void:
+	rng_salt = randi()
 
 
 func _physics_process(delta: float) -> void:
 	_previous_distance = distance_m
 	speed_mps = move_toward(speed_mps, target_speed_mps, ACCELERATION * delta)
 	distance_m += speed_mps * delta
+
+
+## A fresh seed per body, in spawn order. Instance ids differ from run to run, so a seed
+## built from one makes every run of the same inputs play out differently.
+func next_seed() -> int:
+	rng_serial += 1
+	return hash([rng_salt, rng_serial])
 
 
 ## World velocity of everything outside the train (+Z is backward along the track).

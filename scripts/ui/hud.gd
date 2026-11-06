@@ -1,16 +1,19 @@
 class_name Hud
 extends CanvasLayer
 ## Crosshair, context prompt, throw charge, status line, toasts, clipboard.
+## The raid readout lives in RoundHud, a child built here and bound by bind_round().
 
 const TOAST_SECONDS := 2.4
 
 var clipboard: Clipboard
+var round_hud: RoundHud
 var clipboard_open := false
 var touch_mode := false
 
 var _player: Player
 var _local_input: LocalInput
 var _touch: TouchControls
+var _crosshair: ColorRect
 var _prompt: Label
 var _status: Label
 var _toast: Label
@@ -35,11 +38,12 @@ func _ready() -> void:
 	crosshair.set_anchors_preset(Control.PRESET_CENTER)
 	crosshair.position -= Vector2(2.5, 2.5)
 	root.add_child(crosshair)
+	_crosshair = crosshair
 
 	_prompt = _add_label(root, Control.PRESET_CENTER, Vector2(-300.0, 34.0), 600.0, 20, HORIZONTAL_ALIGNMENT_CENTER)
 	_rope_hint = _add_label(root, Control.PRESET_CENTER, Vector2(-300.0, -120.0), 600.0, 30, HORIZONTAL_ALIGNMENT_CENTER)
 	_rope_hint.modulate = Color(1.0, 0.72, 0.3)
-	_toast = _add_label(root, Control.PRESET_CENTER_TOP, Vector2(-300.0, 70.0), 600.0, 26, HORIZONTAL_ALIGNMENT_CENTER)
+	_toast = _add_label(root, Control.PRESET_CENTER_TOP, Vector2(-300.0, 156.0), 600.0, 26, HORIZONTAL_ALIGNMENT_CENTER)
 	_status = _add_label(root, Control.PRESET_TOP_LEFT, Vector2(16.0, 12.0), 700.0, 18, HORIZONTAL_ALIGNMENT_LEFT)
 
 	_charge = ProgressBar.new()
@@ -52,6 +56,11 @@ func _ready() -> void:
 	_charge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_charge.visible = false
 	root.add_child(_charge)
+
+	round_hud = RoundHud.new()
+	round_hud.name = "RoundHud"
+	root.add_child(round_hud)
+	round_hud.menu_changed.connect(_on_round_menu_changed)
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -93,6 +102,12 @@ func bind_local_player(player: Player, local_input: LocalInput, touch: TouchCont
 	player.hands.charge_changed.connect(_on_charge_changed)
 
 
+func bind_round(director: RoundDirector) -> void:
+	round_hud.bind(director, touch_mode)
+	# Local shortcut. In co-op a client's press becomes a request to the host.
+	round_hud.restart_pressed.connect(director.next_round)
+
+
 func show_toast(text: String) -> void:
 	_toast.text = text
 	_toast.modulate.a = 1.0
@@ -102,15 +117,27 @@ func show_toast(text: String) -> void:
 func toggle_clipboard() -> void:
 	clipboard_open = not clipboard_open
 	clipboard.visible = clipboard_open
+	_apply_freeze()
+
+
+func _apply_freeze() -> void:
+	var frozen := clipboard_open or round_hud.menu_open
 	if _local_input != null:
-		_local_input.set_frozen(clipboard_open)
+		_local_input.set_frozen(frozen)
 	if _touch != null:
-		_touch.suspended = clipboard_open
+		_touch.suspended = frozen
 		_touch.queue_redraw()
 
 
+func _on_round_menu_changed(open: bool) -> void:
+	if open:
+		clipboard_open = false
+		clipboard.visible = false
+	_apply_freeze()
+
+
 func _process(delta: float) -> void:
-	if Input.is_action_just_pressed(&"clipboard"):
+	if Input.is_action_just_pressed(&"clipboard") and not round_hud.menu_open:
 		toggle_clipboard()
 	if _toast_left > 0.0:
 		_toast_left -= delta
@@ -119,6 +146,12 @@ func _process(delta: float) -> void:
 	if _status_timer <= 0.0:
 		_status_timer = 0.2
 		_status.text = "%d km/h    %d m    yeeted: %d" % [roundi(TrainState.speed_kmh()), roundi(TrainState.distance_m), _yeet_count]
+	# The results screen hides these: they would show through its dim.
+	var playing := not round_hud.menu_open
+	_status.visible = playing
+	_crosshair.visible = playing
+	_prompt.visible = playing
+	_toast.visible = playing and not round_hud.banner_showing()
 	_update_rope_hint()
 
 

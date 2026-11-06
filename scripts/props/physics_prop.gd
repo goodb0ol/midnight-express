@@ -17,6 +17,10 @@ var _thrown_time := 0.0
 var _off_train_time := 0.0
 var _bounces_left := 0
 var _rng := RandomNumberGenerator.new()
+var _watch_left := 0.0
+var _impact_wait := 0.0
+var _scenery_wait := 0.0
+var _pre_velocity := Vector3.ZERO
 
 
 static func create(prop_kind: StringName) -> PhysicsProp:
@@ -47,19 +51,14 @@ func _configure(prop_kind: StringName) -> void:
 	shape.shape = box
 	add_child(shape)
 
-	var parts: Array = def.get("parts", [[def["size"], Vector3.ZERO, def["color"]]])
-	var batch := MeshBatch.new()
-	for part: Array in parts:
-		batch.add_box(part[0], part[1], MeshBatch.flat(part[2]))
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = batch.build()
-	add_child(mesh)
+	Models.place(self, "props/" + String(prop_kind), "", Vector3.ZERO)
 
 
 func _ready() -> void:
 	set_physics_process(false)
-	_rng.seed = hash([name, get_instance_id()])
+	_rng.seed = TrainState.next_seed()
 	contact_monitor = false
+	max_contacts_reported = 4
 	body_entered.connect(_on_body_entered)
 
 
@@ -69,12 +68,22 @@ func grabbed_by(hands: Hands) -> void:
 	gravity_scale = 0.0
 	angular_damp = 8.0
 	sleeping = false
+	_watch_contacts(INF)
 
 
 func released() -> void:
 	holder = null
 	gravity_scale = 1.0
 	angular_damp = 0.0
+	_watch_left = YeetTuning.WATCH_AFTER_HOLD
+
+
+## Contact reports cost, so they run only while this prop can do something funny.
+func _watch_contacts(seconds: float) -> void:
+	_watch_left = maxf(_watch_left, seconds)
+	_pre_velocity = linear_velocity
+	contact_monitor = true
+	set_physics_process(true)
 
 
 ## After a hard throw, the first hit on a bonkable target counts as a bonk.
@@ -84,10 +93,8 @@ func arm_thrown(thrower: Node3D) -> void:
 	_thrower = thrower
 	_thrown_direction = linear_velocity.normalized()
 	_thrown_time = 1.5
-	contact_monitor = true
-	max_contacts_reported = 4
 	continuous_cd = true
-	set_physics_process(true)
+	_watch_contacts(YeetTuning.WATCH_AFTER_THROW)
 
 
 ## Half the largest dimension: how much further out Hands must hold this prop.
@@ -96,8 +103,14 @@ func get_extent() -> float:
 	return size[size.max_axis_index()] * 0.5
 
 
-func receive_bonk(power: int, direction: Vector3, _attacker: Node3D) -> void:
-	apply_central_impulse(direction * (3.0 + power * 2.0))
+## Bat it across the carriage. A prop hit hard enough becomes a thrown prop, so a good
+## swing at the coal can knock a passenger over.
+func receive_bonk(power: int, direction: Vector3, attacker: Node3D) -> void:
+	sleeping = false
+	linear_velocity += (direction * (6.0 + power * 3.0) + Vector3.UP * 2.0) * clampf(sqrt(6.0 / mass), 0.45, 1.4)
+	angular_velocity += Vector3(_rng.randf_range(-9.0, 9.0), _rng.randf_range(-9.0, 9.0), _rng.randf_range(-9.0, 9.0))
+	if attacker != null:
+		arm_thrown(attacker)
 
 
 func yeet_anchor() -> Vector3:
@@ -122,20 +135,25 @@ func on_left_train() -> void:
 	linear_velocity += YeetTuning.snatch_velocity(speed, signf(global_position.x))
 	angular_velocity += YeetTuning.random_spin(_rng, speed)
 	_bounces_left = YeetTuning.GROUND_BOUNCES if speed > 1.0 else 0
-	set_physics_process(true)
+	_watch_contacts(0.0)
 	GameEvents.object_yeeted.emit(self)
 
 
 func _physics_process(delta: float) -> void:
+	_impact_wait -= delta
+	_scenery_wait -= delta
 	if _thrown_time > 0.0:
 		_thrown_time -= delta
 		if _thrown_time <= 0.0:
-			contact_monitor = false
 			continuous_cd = is_tool or off_train
-			if not off_train:
-				set_physics_process(false)
 	if off_train:
 		_tick_outside(delta)
+	else:
+		_watch_left -= delta
+		if _watch_left <= 0.0 and _thrown_time <= 0.0:
+			contact_monitor = false
+			set_physics_process(false)
+	_pre_velocity = linear_velocity
 
 
 func _tick_outside(delta: float) -> void:
@@ -153,7 +171,16 @@ func _tick_outside(delta: float) -> void:
 
 
 func _on_body_entered(body: Node) -> void:
-	if _thrown_time <= 0.0 or not body.has_method("receive_bonk") or body is PhysicsProp:
+	var speed := (_pre_velocity - YeetTuning.surface_velocity(body)).length()
+	if _thrown_time > 0.0 and body.has_method("receive_bonk") and not body is PhysicsProp:
+		body.call("receive_bonk", bonk_power, _thrown_direction, _thrower)
+		_thrown_time = 0.0
+		_impact_wait = 0.0
+	if speed < YeetTuning.IMPACT_MIN_SPEED:
 		return
-	body.call("receive_bonk", bonk_power, _thrown_direction, _thrower)
-	_thrown_time = 0.0
+	if _impact_wait <= 0.0:
+		_impact_wait = YeetTuning.IMPACT_COOLDOWN
+		GameEvents.impact.emit(self, global_position, speed)
+	if off_train and YeetTuning.is_scenery(body) and _scenery_wait <= 0.0:
+		_scenery_wait = YeetTuning.SCENERY_COOLDOWN
+		GameEvents.body_hit_scenery.emit(self, speed)

@@ -3,17 +3,17 @@ class_name BodyPlan
 ## Positions are in dummy space: feet at the origin, facing -Z.
 
 const PARTS := {
-	&"pelvis": {"size": Vector3(0.36, 0.22, 0.22), "pos": Vector3(0.0, 0.98, 0.0), "mass": 8.0, "tint": &"pants"},
-	&"chest": {"size": Vector3(0.42, 0.42, 0.24), "pos": Vector3(0.0, 1.31, 0.0), "mass": 14.0, "tint": &"shirt"},
-	&"head": {"size": Vector3(0.26, 0.26, 0.26), "pos": Vector3(0.0, 1.67, 0.0), "mass": 4.0, "tint": &"skin"},
-	&"upper_arm_l": {"size": Vector3(0.11, 0.32, 0.11), "pos": Vector3(-0.29, 1.35, 0.0), "mass": 2.5, "tint": &"shirt"},
-	&"forearm_l": {"size": Vector3(0.1, 0.3, 0.1), "pos": Vector3(-0.29, 1.03, 0.0), "mass": 1.5, "tint": &"skin"},
-	&"upper_arm_r": {"size": Vector3(0.11, 0.32, 0.11), "pos": Vector3(0.29, 1.35, 0.0), "mass": 2.5, "tint": &"shirt"},
-	&"forearm_r": {"size": Vector3(0.1, 0.3, 0.1), "pos": Vector3(0.29, 1.03, 0.0), "mass": 1.5, "tint": &"skin"},
-	&"thigh_l": {"size": Vector3(0.15, 0.42, 0.15), "pos": Vector3(-0.11, 0.66, 0.0), "mass": 5.0, "tint": &"pants"},
-	&"shin_l": {"size": Vector3(0.13, 0.42, 0.13), "pos": Vector3(-0.11, 0.22, 0.0), "mass": 3.0, "tint": &"pants"},
-	&"thigh_r": {"size": Vector3(0.15, 0.42, 0.15), "pos": Vector3(0.11, 0.66, 0.0), "mass": 5.0, "tint": &"pants"},
-	&"shin_r": {"size": Vector3(0.13, 0.42, 0.13), "pos": Vector3(0.11, 0.22, 0.0), "mass": 3.0, "tint": &"pants"},
+	&"pelvis": {"size": Vector3(0.36, 0.22, 0.22), "pos": Vector3(0.0, 0.98, 0.0), "mass": 8.0},
+	&"chest": {"size": Vector3(0.42, 0.42, 0.24), "pos": Vector3(0.0, 1.31, 0.0), "mass": 14.0},
+	&"head": {"size": Vector3(0.26, 0.26, 0.26), "pos": Vector3(0.0, 1.67, 0.0), "mass": 4.0},
+	&"upper_arm_l": {"size": Vector3(0.11, 0.32, 0.11), "pos": Vector3(-0.29, 1.35, 0.0), "mass": 2.5},
+	&"forearm_l": {"size": Vector3(0.1, 0.3, 0.1), "pos": Vector3(-0.29, 1.03, 0.0), "mass": 1.5},
+	&"upper_arm_r": {"size": Vector3(0.11, 0.32, 0.11), "pos": Vector3(0.29, 1.35, 0.0), "mass": 2.5},
+	&"forearm_r": {"size": Vector3(0.1, 0.3, 0.1), "pos": Vector3(0.29, 1.03, 0.0), "mass": 1.5},
+	&"thigh_l": {"size": Vector3(0.15, 0.42, 0.15), "pos": Vector3(-0.11, 0.66, 0.0), "mass": 5.0},
+	&"shin_l": {"size": Vector3(0.13, 0.42, 0.13), "pos": Vector3(-0.11, 0.22, 0.0), "mass": 3.0},
+	&"thigh_r": {"size": Vector3(0.15, 0.42, 0.15), "pos": Vector3(0.11, 0.66, 0.0), "mass": 5.0},
+	&"shin_r": {"size": Vector3(0.13, 0.42, 0.13), "pos": Vector3(0.11, 0.22, 0.0), "mass": 3.0},
 }
 
 ## cone: ball joint, X axis runs down the child bone. hinge: elbow/knee around the body's X.
@@ -31,24 +31,26 @@ const JOINTS := [
 ]
 
 const HEIGHT := 1.8
-const PALETTES: Array[Dictionary] = [
-	{&"shirt": Color(0.72, 0.56, 0.24), &"pants": Color(0.25, 0.25, 0.3), &"skin": Color(0.86, 0.72, 0.6)},
-	{&"shirt": Color(0.24, 0.52, 0.42), &"pants": Color(0.32, 0.22, 0.2), &"skin": Color(0.72, 0.56, 0.44)},
-	{&"shirt": Color(0.6, 0.24, 0.4), &"pants": Color(0.2, 0.26, 0.34), &"skin": Color(0.9, 0.78, 0.68)},
-	{&"shirt": Color(0.3, 0.36, 0.64), &"pants": Color(0.3, 0.28, 0.22), &"skin": Color(0.52, 0.38, 0.3)},
-]
+## Passenger models in assets/models/passengers. Each holds one mesh per part above,
+## plus head_ko, the knocked-out head.
+const PASSENGERS: Array[String] = ["gran", "baron", "smuggler", "intern", "stoker", "opera"]
+## These stand back up after a shove. The rest faint on the spot. Stowaways always get up.
+const TOUGH: Array[String] = ["gran", "baron", "smuggler", "stoker"]
+## How each passenger walks. sway: side-to-side roll (rad). stride: leg swing (rad).
+## cadence: step rate. speed: wander speed multiplier.
+const GAIT := {
+	"gran": {"sway": 0.2, "stride": 0.32, "cadence": 1.5, "speed": 0.7},
+	"baron": {"sway": 0.3, "stride": 0.5, "cadence": 0.8, "speed": 0.85},
+	"smuggler": {"sway": 0.08, "stride": 0.6, "cadence": 1.1, "speed": 1.1},
+	"intern": {"sway": 0.12, "stride": 0.65, "cadence": 1.3, "speed": 1.3},
+	"stoker": {"sway": 0.24, "stride": 0.7, "cadence": 0.9, "speed": 1.0},
+	"opera": {"sway": 0.36, "stride": 0.42, "cadence": 1.0, "speed": 0.9},
+}
 
 
-static func add_face(head: Node3D, text: String) -> Label3D:
-	var face := Label3D.new()
-	face.name = "Face"
-	face.text = text
-	face.font_size = 42
-	face.pixel_size = 0.0045
-	face.modulate = Color(0.08, 0.05, 0.05)
-	face.outline_size = 0
-	face.position = Vector3(0.0, 0.0, -0.135)
-	face.rotation.y = PI
-	face.double_sided = false
-	head.add_child(face)
-	return face
+## Mesh for a body part. Part origins sit at their BodyPlan positions.
+static func part_mesh(passenger: String, part_name: StringName, knocked_out := false) -> Mesh:
+	var object := String(part_name)
+	if knocked_out and part_name == &"head":
+		object = "head_ko"
+	return Models.mesh("passengers/" + passenger, object)

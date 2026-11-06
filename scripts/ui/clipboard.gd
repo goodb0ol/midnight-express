@@ -20,7 +20,7 @@ func _ready() -> void:
 	margin.add_child(column)
 
 	var title := Label.new()
-	title.text = "CLIPBOARD  -  Milestone 1 test bench"
+	title.text = "CLIPBOARD  -  Raid notes and test bench"
 	title.add_theme_font_size_override("font_size", 22)
 	column.add_child(title)
 
@@ -74,4 +74,8 @@ func _controls_text() -> String:
 		"",
 		"Wrench or pan: one bonk knocks out. Fists: three.",
 		"Fell out? Press grab near the orange rope behind the train.",
+		"",
+		"Red tags are stowaways. Bonk, carry to a window, open it, throw.",
+		"Quick yeets chain a combo. Hitting scenery pays. Paying passengers cost you.",
+		"Reset restarts the current raid.",
 	])

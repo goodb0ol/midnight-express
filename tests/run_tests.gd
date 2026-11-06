@@ -6,6 +6,7 @@ extends Node
 ## Exit code is 0 only if every test finished and every assertion held.
 
 const BISTRO_WINDOW_Z := -4.0
+const ErrorWatch := preload("res://tests/error_watch.gd")
 
 var passed := 0
 var failed := 0
@@ -13,6 +14,9 @@ var main: Main
 var player: Player
 var input: ScriptedInput
 var events: Array[String] = []
+## Fixed dice. Set TEST_RNG_SALT to replay every test under other dice and hunt flakes.
+var rng_salt := 0
+var _error_watch := ErrorWatch.new()
 
 
 func _ready() -> void:
@@ -22,6 +26,8 @@ func _ready() -> void:
 func _run() -> void:
 	await get_tree().process_frame
 	get_window().size = Vector2i(1280, 720)
+	OS.add_logger(_error_watch)
+	rng_salt = OS.get_environment("TEST_RNG_SALT").to_int()
 	GameEvents.object_yeeted.connect(_note.bind("yeeted").unbind(1))
 	GameEvents.object_despawned.connect(_note.bind("despawned").unbind(1))
 	GameEvents.npc_knocked_out.connect(_note.bind("knocked_out").unbind(3))
@@ -32,29 +38,49 @@ func _run() -> void:
 	var filter := ""
 	if not OS.get_cmdline_user_args().is_empty():
 		filter = OS.get_cmdline_user_args()[0]
-	var tests: Array[String] = []
-	for method: Dictionary in get_script().get_script_method_list():
-		var method_name: String = method["name"]
-		if method_name.begins_with("test_") and (filter.is_empty() or method_name.contains(filter)):
-			tests.append(method_name)
-	for test_name in tests:
+	TestDummy.brain_enabled = false
+	var tests: Array[Array] = []
+	_add_tests(self, tests, filter)
+	for file: String in DirAccess.get_files_at("res://tests"):
+		if file.begins_with("suite_") and file.ends_with(".gd"):
+			var suite: RefCounted = load("res://tests/" + file).new()
+			suite.set("t", self)
+			_add_tests(suite, tests, filter)
+	for entry in tests:
+		var test_owner: Object = entry[0]
+		var test_name: String = entry[1]
 		await _fresh_main()
 		var before := failed
-		var finished: Variant = await call(test_name)
+		var finished: Variant = await test_owner.call(test_name)
 		if finished != true:
 			failed += 1
 			push_error("FAIL %s: did not finish (runtime error?)" % test_name)
-		print("%s %s" % ["FAIL" if failed > before else "ok  ", test_name])
 		await _teardown()
+		for line in _error_watch.take():
+			check(false, "the log stays clean: %s" % line)
+		print("%s %s" % ["FAIL" if failed > before else "ok  ", test_name])
 	print("Results: %d passed, %d failed, %d tests" % [passed, failed, tests.size()])
 	get_tree().quit(1 if failed > 0 else 0)
+
+
+func _add_tests(source: Object, tests: Array[Array], filter: String) -> void:
+	for method: Dictionary in source.get_script().get_script_method_list():
+		var method_name: String = method["name"]
+		if method_name.begins_with("test_") and (filter.is_empty() or method_name.contains(filter)):
+			tests.append([source, method_name])
 
 
 func _fresh_main() -> void:
 	TrainState.distance_m = 0.0
 	TrainState.speed_mps = 100.0 / 3.6
 	TrainState.target_speed_mps = 100.0 / 3.6
+	TrainState.rng_salt = rng_salt
+	TrainState.rng_serial = 0
+	# Sound dice and the whistle timer: they count hits and can land inside a measurement.
+	Sfx._rng.seed = rng_salt
+	Sfx._next_whistle = Sfx._clock + 1000.0
 	main = load("res://scenes/main.tscn").instantiate()
+	main.auto_start_round = false
 	get_tree().root.add_child(main)
 	player = main.local_player
 	var old_input := player.input_source
@@ -173,7 +199,7 @@ func test_project_setup() -> bool:
 	for action: StringName in [&"move_forward", &"move_back", &"move_left", &"move_right", &"jump", &"sprint", &"grab", &"throw", &"use", &"clipboard"]:
 		check(InputMap.has_action(action), "action %s exists" % action)
 		check(not InputMap.action_get_events(action).is_empty(), "action %s has a default binding" % action)
-	check(main.train.openings().size() == 37, "3 cars x 12 openings + rear door, got %d" % main.train.openings().size())
+	check(main.train.openings().size() == 19, "3 cars x 6 working openings + rear door, got %d" % main.train.openings().size())
 	return true
 
 
@@ -470,19 +496,43 @@ func test_ragdoll_is_stable_and_holds_together() -> bool:
 	return true
 
 
+## Walks around the body until the crosshair sits on a limb, and returns that limb. How a
+## body lands is a matter of dice: from one side a limb can lie under the rest of it.
+func _aim_at_a_limb(ragdoll: Ragdoll) -> RagdollPart:
+	var limbs: Array[RagdollPart] = ragdoll.parts.filter(func(p: RagdollPart) -> bool: return p.part_name in [&"forearm_l", &"forearm_r", &"shin_l", &"shin_r"])
+	for limb in limbs:
+		for reach: float in [0.9, 0.6]:
+			for i in 8:
+				var spot := limb.global_position + Vector3(0.0, 0.0, -reach).rotated(Vector3.UP, TAU * i / 8.0)
+				if absf(spot.x) > TrainCar.HALF_WIDTH - 0.4:
+					continue
+				await stand_player(Vector3(spot.x, 0.05, spot.z), limb.global_position)
+				await ticks(8)  # Let the feet settle, then aim from the real eye height.
+				input.aim_at(player.eye_position(), limb.global_position)
+				await ticks(2)
+				if player.hands._aim_hit.get("collider") == limb:
+					return limb
+	return null
+
+
 func test_grab_ragdoll_by_a_limb_and_drag_it() -> bool:
 	var ragdoll := await knock_out(first_dummy())
 	await seconds(2.0)
-	var forearm: RagdollPart = ragdoll.parts.filter(func(p: RagdollPart) -> bool: return p.part_name == &"forearm_l")[0]
-	var spot := forearm.global_position + Vector3(0.0, 0.0, -0.9)
-	await stand_player(Vector3(spot.x, 0.05, spot.z), forearm.global_position)
+	for i in 180:  # Some landings take a while to settle, and a small limb moves off the aim.
+		if ragdoll.center_velocity().length() < 0.02:
+			break
+		await ticks(1)
+	var limb := await _aim_at_a_limb(ragdoll)
+	check(limb != null, "a limb can be aimed at")
+	if limb == null:
+		return true
 	await ticks(1)
 	input.press_grab()
 	await ticks(3)
-	check(player.hands.held == forearm, "grabbed one limb")
+	check(player.hands.held == limb, "grabbed one limb")
 	input.pitch = 0.0
 	await seconds(0.6)
-	check(forearm.global_position.y > 0.8, "limb lifted, y=%.2f" % forearm.global_position.y)
+	check(limb.global_position.y > 0.8, "limb lifted, y=%.2f" % limb.global_position.y)
 	var pelvis_before := ragdoll.pelvis.global_position
 	input.yaw = 0.0
 	input.pitch = 0.0
